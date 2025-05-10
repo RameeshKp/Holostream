@@ -61,6 +61,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
             setLocalStream(stream);
             localStreamRef.current = stream;
         } catch (err) {
+            console.log("🚀 ~ setupLocalStream ~ err:", err)
             console.error('Error accessing media devices:', err);
         }
     };
