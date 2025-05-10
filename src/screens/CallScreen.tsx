@@ -7,7 +7,14 @@ import {
     TouchableOpacity,
     Alert,
 } from 'react-native';
-// import VideoCall from '../components/VideoCall';
+import VideoCall from '../components/VideoCall';
+import firestore from '@react-native-firebase/firestore';
+
+interface VideoCallProps {
+    roomId: string;
+    isBroadcaster: boolean;
+    onHangUp: () => void;
+}
 
 const CallScreen: React.FC = () => {
     const [roomId, setRoomId] = useState('');
@@ -15,7 +22,7 @@ const CallScreen: React.FC = () => {
     const [isBroadcaster, setIsBroadcaster] = useState(false);
 
     const generateRoomId = () => {
-        return Math.random().toString(36).substring(2, 15);
+        return Math.floor(1000 + Math.random() * 9000).toString();
     };
 
     const startNewCall = () => {
@@ -25,17 +32,41 @@ const CallScreen: React.FC = () => {
         setIsInCall(true);
     };
 
-    const joinExistingCall = () => {
+    const joinExistingCall = async () => {
         if (!roomId.trim()) {
             Alert.alert('Error', 'Please enter a room ID');
             return;
         }
-        setIsBroadcaster(false);
-        setIsInCall(true);
+
+        try {
+            const roomRef: any = firestore().collection('rooms');
+            const roomDocs: any = (await roomRef.get())._docs;
+
+            // Find room with matching roomId and active status
+            const activeRoom = roomDocs.find((doc: any) =>
+                doc._data.roomId === roomId && doc._data.status === 'active'
+            );
+
+            if (!activeRoom) {
+                Alert.alert('Error', 'Room does not exist or is not active');
+                return;
+            }
+
+            setIsBroadcaster(false);
+            setIsInCall(true);
+            setRoomId(''); // Reset input after successful join
+        } catch (error) {
+            console.error('Error checking room:', error);
+            Alert.alert('Error', 'Failed to join room');
+        }
     };
 
     if (isInCall) {
-        // return <VideoCall roomId={roomId} isBroadcaster={isBroadcaster} />;
+        return <VideoCall
+            roomId={roomId}
+            isBroadcaster={isBroadcaster}
+            onHangUp={() => setIsInCall(false)}
+        />;
     }
 
     return (
