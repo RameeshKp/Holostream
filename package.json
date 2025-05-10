@@ -10,8 +10,12 @@
     "test": "jest"
   },
   "dependencies": {
+    "@react-native-firebase/app": "^22.1.0",
+    "@react-native-firebase/firestore": "^22.1.0",
     "react": "19.0.0",
-    "react-native": "0.79.2"
+    "react-native": "0.79.2",
+    "react-native-permissions": "^5.4.0",
+    "react-native-webrtc": "^124.0.5"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
