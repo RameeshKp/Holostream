@@ -123,4 +123,19 @@ export const styles = StyleSheet.create({
         fontSize: 14,
         textDecorationLine: 'underline',
     },
+    divider: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginVertical: 20,
+    },
+    dividerLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: '#ddd',
+    },
+    dividerText: {
+        marginHorizontal: 10,
+        color: '#666',
+        fontSize: 14,
+    },
 });

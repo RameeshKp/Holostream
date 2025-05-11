@@ -144,6 +144,18 @@ const CallScreen: React.FC = () => {
             <Text style={styles.title}>HoloStream</Text>
             <Text style={styles.subtitle}>"Join or start a video conference instantly — connect, collaborate, and communicate with ease."</Text>
 
+            <View style={styles.buttonContainer}>
+                <TouchableOpacity style={styles.button} onPress={startNewCall}>
+                    <Text style={styles.buttonText}>Create New Room</Text>
+                </TouchableOpacity>
+            </View>
+
+            <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+            </View>
+
             <View style={styles.inputContainer}>
                 <TextInput
                     style={styles.input}
@@ -152,19 +164,11 @@ const CallScreen: React.FC = () => {
                     onChangeText={setRoomId}
                     autoCapitalize="none"
                     keyboardType='numeric'
-                    returnKeyType='next'
-                    onSubmitEditing={joinExistingCall}
+                    returnKeyType='done'
                 />
-            </View>
-
-            <View style={styles.buttonContainer}>
-                <TouchableOpacity style={styles.button} onPress={startNewCall}>
-                    <Text style={styles.buttonText}>Create New Room</Text>
-                </TouchableOpacity>
-
                 <TouchableOpacity
                     disabled={isLoading}
-                    style={styles.button}
+                    style={[styles.button, { marginTop: 10 }]}
                     onPress={joinExistingCall}
                 >
                     {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Join Room</Text>}
