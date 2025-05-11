@@ -18,16 +18,17 @@ import firestore from '@react-native-firebase/firestore';
 
 interface VideoCallProps {
     roomId: string;
+    roomRefId?: string;
     isBroadcaster: boolean;
     onHangUp: () => void;
 }
 
-const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }) => {
+const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster, onHangUp }) => {
     const [localStream, setLocalStream] = useState<any>(null);
     const [remoteStreams, setRemoteStreams] = useState<any[]>([]);
     const [isConnecting, setIsConnecting] = useState(false);
     const [showRoomId, setShowRoomId] = useState(false);
-    const [roomDocId, setRoomDocId] = useState<string>('');
+    const [roomDocId, setRoomDocId] = useState<string | undefined>(roomRefId);
 
     const peerConnections = useRef<{ [key: string]: RTCPeerConnection }>({});
     const localStreamRef = useRef<any>(null);
@@ -36,7 +37,11 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
         ],
+        iceCandidatePoolSize: 10,
     };
 
     useEffect(() => {
@@ -61,17 +66,16 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
             setLocalStream(stream);
             localStreamRef.current = stream;
         } catch (err) {
-            console.log("🚀 ~ setupLocalStream ~ err:", err)
             console.error('Error accessing media devices:', err);
         }
     };
 
     const setupFirestoreListeners = () => {
-        const roomRef = firestore().collection('rooms').doc(roomId);
+        const roomRef: any = firestore().collection('rooms').doc(roomDocId);
         // Listen for room status changes (for viewers)
         if (!isBroadcaster) {
-            roomRef.onSnapshot((doc) => {
-                const exists: any = doc.exists;
+            roomRef.onSnapshot((doc: any) => {
+                const exists: any = doc._exists;
                 if (exists === true) {
                     const roomData = doc.data();
                     if (roomData?.status === 'inactive') {
@@ -86,8 +90,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
         }
 
         // Listen for new participants
-        roomRef.collection('participants').onSnapshot((snapshot) => {
-            snapshot.docChanges().forEach((change) => {
+        roomRef.collection('participants').onSnapshot((snapshot: any) => {
+            snapshot.docChanges().forEach((change: any) => {
                 if (change.type === 'added') {
                     handleNewParticipant(change.doc.id);
                 }
@@ -95,8 +99,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
         });
 
         // Listen for ICE candidates
-        roomRef.collection('ice-candidates').onSnapshot((snapshot) => {
-            snapshot.docChanges().forEach((change) => {
+        roomRef.collection('ice-candidates').onSnapshot((snapshot: any) => {
+            snapshot.docChanges().forEach((change: any) => {
                 if (change.type === 'added') {
                     const candidate = change.doc.data();
                     handleNewICECandidate(candidate);
@@ -131,7 +135,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
 
         (pc as any).onicecandidate = (event: { candidate: RTCIceCandidate | null }) => {
             if (event.candidate) {
-                const roomRef = firestore().collection('rooms').doc(roomId);
+                const roomRef = firestore().collection('rooms').doc(roomDocId);
                 roomRef.collection('ice-candidates').add({
                     candidate: event.candidate,
                     participantId,
@@ -141,11 +145,19 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
         };
 
         (pc as any).oniceconnectionstatechange = () => {
-
+            console.log('ICE Connection State:', pc.iceConnectionState);
         };
 
         (pc as any).ontrack = (event: { streams: any[] }) => {
-            setRemoteStreams((prev) => [...prev, event.streams[0]]);
+            console.log('Received remote track:', event.streams[0]);
+            setRemoteStreams((prev) => {
+                // Check if stream already exists
+                const exists = prev.some(stream => stream.id === event.streams[0].id);
+                if (!exists) {
+                    return [...prev, event.streams[0]];
+                }
+                return prev;
+            });
         };
 
         if (localStreamRef.current) {
@@ -233,20 +245,16 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
         setIsConnecting(true);
         try {
             // 1. Get the room reference
-            const roomRef = firestore().collection('rooms').doc(roomId);
-
+            const roomRef = firestore().collection('rooms').doc(roomDocId);
             // 2. Get the broadcaster's offer
             const offerDoc = await roomRef.collection('offers').doc('broadcaster').get();
-
             if (!offerDoc.exists) {
                 throw new Error('No offer found from broadcaster');
             }
 
             const offerData = offerDoc.data() as { sdp: string; type: string };
-
             // 3. Create peer connection
             const pc = createPeerConnection('viewer');
-
             // 4. Set remote description (broadcaster's offer)
             await pc.setRemoteDescription(new RTCSessionDescription({
                 sdp: offerData.sdp,
@@ -271,7 +279,12 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
                     snapshot.docChanges().forEach(async (change) => {
                         if (change.type === 'added') {
                             const candidate = change.doc.data();
-                            await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
+                            try {
+                                await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
+                                console.log('Added ICE candidate from broadcaster');
+                            } catch (err) {
+                                console.error('Error adding ICE candidate:', err);
+                            }
                         }
                     });
                 });
@@ -283,7 +296,12 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, isBroadcaster, onHangUp }
 
             for (const doc of existingCandidates.docs) {
                 const candidate = doc.data();
-                await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
+                    console.log('Added existing ICE candidate from broadcaster');
+                } catch (err) {
+                    console.error('Error adding existing ICE candidate:', err);
+                }
             }
 
             Alert.alert('Success', 'Joined call successfully');

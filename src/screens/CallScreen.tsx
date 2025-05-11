@@ -18,6 +18,7 @@ interface VideoCallProps {
 
 const CallScreen: React.FC = () => {
     const [roomId, setRoomId] = useState('');
+    const [roomDocID, setRoomDocID] = useState('');
     const [isInCall, setIsInCall] = useState(false);
     const [isBroadcaster, setIsBroadcaster] = useState(false);
 
@@ -41,7 +42,6 @@ const CallScreen: React.FC = () => {
         try {
             const roomRef: any = firestore().collection('rooms');
             const roomDocs: any = (await roomRef.get())._docs;
-
             // Find room with matching roomId and active status
             const activeRoom = roomDocs.find((doc: any) =>
                 doc._data.roomId === roomId && doc._data.status === 'active'
@@ -52,9 +52,10 @@ const CallScreen: React.FC = () => {
                 return;
             }
 
+            setRoomDocID(activeRoom.id);
             setIsBroadcaster(false);
             setIsInCall(true);
-            setRoomId(''); // Reset input after successful join
+            // setRoomId(''); // Reset input after successful join
         } catch (error) {
             console.error('Error checking room:', error);
             Alert.alert('Error', 'Failed to join room');
@@ -64,6 +65,7 @@ const CallScreen: React.FC = () => {
     if (isInCall) {
         return <VideoCall
             roomId={roomId}
+            roomRefId={roomDocID}
             isBroadcaster={isBroadcaster}
             onHangUp={() => setIsInCall(false)}
         />;
