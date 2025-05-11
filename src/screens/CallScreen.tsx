@@ -67,7 +67,11 @@ const CallScreen: React.FC = () => {
             roomId={roomId}
             roomRefId={roomDocID}
             isBroadcaster={isBroadcaster}
-            onHangUp={() => setIsInCall(false)}
+            onHangUp={() => {
+                setIsInCall(false)
+                setRoomId('')
+                setRoomDocID('')
+            }}
         />;
     }
 
