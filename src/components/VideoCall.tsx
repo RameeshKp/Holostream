@@ -33,6 +33,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     const [roomDocId, setRoomDocId] = useState<string | undefined>(roomRefId);
     const [streamsUpdateKey, setStreamsUpdateKey] = useState(0);
     const remoteStreamsRef = useRef<any[]>([]);
+    const roomStatusUnsubscribe = useRef<(() => void) | null>(null);
 
     const peerConnections = useRef<{ [key: string]: RTCPeerConnection }>({});
     const localStreamRef = useRef<any>(null);
@@ -77,9 +78,15 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
     const setupFirestoreListeners = () => {
         const roomRef: any = firestore().collection('rooms').doc(roomDocId);
+
         // Listen for room status changes (for viewers)
         if (!isBroadcaster) {
-            roomRef.onSnapshot((doc: any) => {
+            // Unsubscribe from previous listener if exists
+            if (roomStatusUnsubscribe.current) {
+                roomStatusUnsubscribe.current();
+            }
+
+            roomStatusUnsubscribe.current = roomRef.onSnapshot((doc: any) => {
                 const exists: any = doc._exists;
                 if (exists === true) {
                     const roomData = doc.data();
@@ -351,6 +358,12 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
     const hangUp = async () => {
         try {
+            // Unsubscribe from room status listener
+            if (roomStatusUnsubscribe.current) {
+                roomStatusUnsubscribe.current();
+                roomStatusUnsubscribe.current = null;
+            }
+
             // Close all peer connections
             Object.values(peerConnections.current).forEach((pc) => {
                 pc.close();
@@ -387,6 +400,12 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
     const cleanup = async () => {
         try {
+            // Unsubscribe from room status listener
+            if (roomStatusUnsubscribe.current) {
+                roomStatusUnsubscribe.current();
+                roomStatusUnsubscribe.current = null;
+            }
+
             // Close all peer connections
             Object.values(peerConnections.current).forEach((pc) => {
                 pc.close();
