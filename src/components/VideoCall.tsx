@@ -54,6 +54,28 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     const [isCameraEnabled, setIsCameraEnabled] = useState(true);
     const [isAudioEnabled, setIsAudioEnabled] = useState(true);
     const [isFrontCamera, setIsFrontCamera] = useState(true);
+    const [participantStatus, setParticipantStatus] = useState<{ [key: string]: { camera: boolean, audio: boolean } }>({});
+
+    const updateParticipantStatus = async (camera: boolean, audio: boolean) => {
+        if (!roomDocId) return;
+
+        try {
+            const statusRef = firestore()
+                .collection('rooms')
+                .doc(roomDocId)
+                .collection('participant-status')
+                .doc(isBroadcaster ? 'broadcaster' : 'viewer');
+
+            await statusRef.set({
+                camera,
+                audio,
+                updatedAt: firestore.FieldValue.serverTimestamp()
+            });
+            console.log("🚀 ~ updateParticipantStatus ~ statusRef:", statusRef)
+        } catch (err) {
+            console.error('Error updating participant status:', err);
+        }
+    };
 
     useEffect(() => {
         setupLocalStream();
@@ -87,7 +109,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
         // Listen for room status changes (for viewers)
         if (!isBroadcaster) {
-            // Unsubscribe from previous listener if exists
             if (roomStatusUnsubscribe.current) {
                 roomStatusUnsubscribe.current();
             }
@@ -106,6 +127,23 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 }
             });
         }
+
+        // Listen for participant status changes
+        roomRef.collection('participant-status').onSnapshot((snapshot: any) => {
+            snapshot.docChanges().forEach((change: any) => {
+                if (change.type === 'added' || change.type === 'modified') {
+                    const status = change.doc.data();
+                    console.log("🚀 ~ snapshot.docChanges ~ status:", status)
+                    setParticipantStatus(prev => ({
+                        ...prev,
+                        [change.doc.id]: {
+                            camera: status.camera,
+                            audio: status.audio
+                        }
+                    }));
+                }
+            });
+        });
 
         // Listen for new participants
         roomRef.collection('participants').onSnapshot((snapshot: any) => {
@@ -235,8 +273,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 createdAt: firestore.FieldValue.serverTimestamp(),
                 roomId: roomId
             });
-            // Store the room document ID
             setRoomDocId(roomRef.id);
+
+            // Initialize broadcaster status
+            await updateParticipantStatus(true, true);
 
             // 2. Create peer connection
             const pc = createPeerConnection('broadcaster');
@@ -294,6 +334,9 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     const joinCall = async () => {
         setIsConnecting(true);
         try {
+            // Initialize viewer status
+            await updateParticipantStatus(true, true);
+
             // 1. Get the room reference
             const roomRef = firestore().collection('rooms').doc(roomDocId);
             // 2. Get the broadcaster's offer
@@ -441,6 +484,16 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 }
             }
 
+            // Remove participant status
+            if (roomDocId) {
+                const statusRef = firestore()
+                    .collection('rooms')
+                    .doc(roomDocId)
+                    .collection('participant-status')
+                    .doc(isBroadcaster ? 'broadcaster' : 'viewer');
+                await statusRef.delete();
+            }
+
             onHangUp();
         } catch (err) {
             console.error('Error during cleanup:', err);
@@ -485,67 +538,84 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
-    const toggleVideo = () => {
+    const toggleVideo = async () => {
         if (localStreamRef.current) {
             const videoTracks = localStreamRef.current.getVideoTracks();
+            const newCameraState = !isCameraEnabled;
             videoTracks.forEach((track: MediaStreamTrack) => {
-                track.enabled = !isCameraEnabled;
+                track.enabled = newCameraState;
             });
-            setIsCameraEnabled(!isCameraEnabled);
+            setIsCameraEnabled(newCameraState);
+            await updateParticipantStatus(newCameraState, isAudioEnabled);
         }
     };
 
-    const toggleAudio = () => {
+    const toggleAudio = async () => {
         if (localStreamRef.current) {
             const audioTracks = localStreamRef.current.getAudioTracks();
+            const newAudioState = !isAudioEnabled;
             audioTracks.forEach((track: MediaStreamTrack) => {
-                track.enabled = !isAudioEnabled;
+                track.enabled = newAudioState;
             });
-            setIsAudioEnabled(!isAudioEnabled);
+            setIsAudioEnabled(newAudioState);
+            await updateParticipantStatus(isCameraEnabled, newAudioState);
         }
     };
 
-    const renderStreamControls = (isLocal: boolean) => (
-        <View style={styles.streamControls}>
-            {isLocal ? (
-                <>
-                    <TouchableOpacity
-                        style={[styles.controlButton, !isCameraEnabled && styles.controlButtonDisabled]}
-                        onPress={toggleVideo}
-                    >
-                        <Text style={styles.controlButtonText}>
-                            {isCameraEnabled ? '📹' : '🚫'}
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.controlButton, !isAudioEnabled && styles.controlButtonDisabled]}
-                        onPress={toggleAudio}
-                    >
-                        <Text style={styles.controlButtonText}>
-                            {isAudioEnabled ? '🎤' : '🚫'}
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.controlButton}
-                        onPress={toggleCamera}
-                    >
-                        <Text style={styles.controlButtonText}>🔄</Text>
-                    </TouchableOpacity>
-                </>
-            ) : (
-                <>
-                    <View style={[styles.controlButton, styles.controlButtonDisabled]}>
-                        <Text style={styles.controlButtonText}>📹</Text>
-                    </View>
-                    <View style={[styles.controlButton, styles.controlButtonDisabled]}>
-                        <Text style={styles.controlButtonText}>🎤</Text>
-                    </View>
-                </>
-            )}
-        </View>
-    );
+    const renderStreamControls = (isLocal: boolean, participantId: string = '') => {
+        const status = isLocal ?
+            { camera: isCameraEnabled, audio: isAudioEnabled } :
+            participantStatus[participantId] || { camera: true, audio: true };
+
+        return (
+            <View style={styles.streamControls}>
+                {isLocal ? (
+                    <>
+                        <TouchableOpacity
+                            style={[styles.controlButton, !status.camera && styles.controlButtonDisabled]}
+                            onPress={toggleVideo}
+                        >
+                            <Text style={styles.controlButtonText}>
+                                {status.camera ? '📹' : '🚫'}
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.controlButton, !status.audio && styles.controlButtonDisabled]}
+                            onPress={toggleAudio}
+                        >
+                            <Text style={styles.controlButtonText}>
+                                {status.audio ? '🎤' : '🚫'}
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.controlButton}
+                            onPress={toggleCamera}
+                        >
+                            <Text style={styles.controlButtonText}>🔄</Text>
+                        </TouchableOpacity>
+                    </>
+                ) : (
+                    <>
+                        <View style={[styles.controlButton, !status.camera && styles.controlButtonDisabled]}>
+                            <Text style={styles.controlButtonText}>
+                                {status.camera ? '📹' : '🚫'}
+                            </Text>
+                        </View>
+                        <View style={[styles.controlButton, !status.audio && styles.controlButtonDisabled]}>
+                            <Text style={styles.controlButtonText}>
+                                {status.audio ? '🎤' : '🚫'}
+                            </Text>
+                        </View>
+                    </>
+                )}
+            </View>
+        );
+    };
 
     const renderRemoteStream = ({ item: stream, index }: { item: any; index: number }) => {
+        const participantId = isBroadcaster ? 'viewer' : 'broadcaster';
+        const status = participantStatus[participantId] || { camera: true, audio: true };
+
         return (
             <View style={styles.remoteStream}>
                 <RTCView
@@ -554,8 +624,20 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     objectFit="cover"
                     mirror={true}
                 />
+                {/* {status.camera ? (
+                    <RTCView
+                        streamURL={stream.toURL()}
+                        style={styles.videoStream}
+                        objectFit="cover"
+                        mirror={true}
+                    />
+                ) : (
+                    <View style={[styles.videoStream, styles.disabledVideo]}>
+                        <Text style={styles.disabledVideoText}>Camera Off</Text>
+                    </View>
+                )} */}
                 <Text style={styles.streamLabel}>Remote Stream {index + 1}</Text>
-                {renderStreamControls(false)}
+                {/* {renderStreamControls(false, participantId)} */}
             </View>
         );
     };
