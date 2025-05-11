@@ -5,21 +5,21 @@ import {
     ScrollView,
     TouchableOpacity,
     Text,
-    Alert,
     FlatList,
+    Share,
 } from 'react-native';
 import {
     RTCPeerConnection,
     RTCIceCandidate,
     RTCSessionDescription,
     RTCView,
-    MediaStream,
     mediaDevices,
     MediaStreamTrack,
 } from 'react-native-webrtc';
 import firestore from '@react-native-firebase/firestore';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-
+import Clipboard from '@react-native-clipboard/clipboard';
+import { showToast, TOAST_TYPE } from '../utils/Toast';
 interface VideoCallProps {
     roomId: string;
     roomRefId?: string;
@@ -72,7 +72,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 audio,
                 updatedAt: firestore.FieldValue.serverTimestamp()
             });
-            console.log("🚀 ~ updateParticipantStatus ~ statusRef:", statusRef)
         } catch (err) {
             console.error('Error updating participant status:', err);
         }
@@ -119,11 +118,11 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 if (exists === true) {
                     const roomData = doc.data();
                     if (roomData?.status === 'inactive') {
-                        Alert.alert('Call Ended', 'The broadcaster has ended the call');
+                        showToast(TOAST_TYPE.ERROR, 'The host has ended the call.');
                         hangUp();
                     }
                 } else {
-                    Alert.alert('Call Ended', 'The room no longer exists');
+                    showToast(TOAST_TYPE.ERROR, 'The room is no longer available.');
                     hangUp();
                 }
             });
@@ -134,7 +133,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             snapshot.docChanges().forEach((change: any) => {
                 if (change.type === 'added' || change.type === 'modified') {
                     const status = change.doc.data();
-                    console.log("🚀 ~ snapshot.docChanges ~ status:", status)
                     setParticipantStatus(prev => ({
                         ...prev,
                         [change.doc.id]: {
@@ -323,10 +321,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
             setShowRoomId(true);
             setIsConnected(true);
-            Alert.alert('Success', 'Call started successfully');
+            showToast(TOAST_TYPE.SUCCESS, 'You are now in the call');
         } catch (err) {
             console.error('Error starting call:', err);
-            Alert.alert('Error', 'Failed to start call');
+            showToast(TOAST_TYPE.ERROR, 'Something went wrong starting the call');
         } finally {
             setIsConnecting(false);
         }
@@ -397,10 +395,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             }
             setIsConnected(true);
 
-            Alert.alert('Success', 'Joined call successfully');
+            showToast(TOAST_TYPE.SUCCESS, 'You have joined the call');
         } catch (err) {
             console.error('Error joining call:', err);
-            Alert.alert('Error', 'Failed to join call');
+            showToast(TOAST_TYPE.ERROR, 'Failed to join call');
         } finally {
             setIsConnecting(false);
         }
@@ -444,7 +442,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             onHangUp();
         } catch (err) {
             console.error('Error during hang up:', err);
-            Alert.alert('Error', 'Failed to properly end the call');
+            showToast(TOAST_TYPE.ERROR, 'Failed to properly end the call');
         }
     };
 
@@ -535,7 +533,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             }
         } catch (err) {
             console.error('Error switching camera:', err);
-            Alert.alert('Error', 'Failed to switch camera');
+            showToast(TOAST_TYPE.ERROR, 'Failed to switch camera');
         }
     };
 
@@ -655,12 +653,49 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         );
     };
 
+    const handleCopyRoomId = async () => {
+        try {
+            await Clipboard.setString(roomId);
+            showToast(TOAST_TYPE.SUCCESS, 'Room code copied');
+        } catch (err) {
+            console.error('Error copying room ID:', err);
+            showToast(TOAST_TYPE.ERROR, 'Failed to copy room ID');
+        }
+    };
+
+    const handleShareRoomId = async () => {
+        try {
+            await Share.share({
+                message: `Join my video call on HoloStream! Room Code: ${roomId}`,
+            });
+        } catch (err) {
+            console.error('Error sharing room ID:', err);
+            showToast(TOAST_TYPE.ERROR, 'Failed to share room ID');
+        }
+    };
+
     return (
         <View style={styles.container}>
             {(isBroadcaster && showRoomId) || !isBroadcaster ? (
                 <View style={styles.roomIdContainer}>
-                    <Text style={styles.roomIdLabel}>Share this Room ID:</Text>
-                    <Text style={styles.roomIdText}>{roomId}</Text>
+                    <Text style={styles.roomIdLabel}>Your Room Code</Text>
+                    <View style={styles.roomIdActions}>
+                        <Text style={styles.roomIdText}>{roomId}</Text>
+                        <View style={styles.roomIdButtons}>
+                            <TouchableOpacity
+                                style={styles.roomIdButton}
+                                onPress={handleCopyRoomId}
+                            >
+                                <Icon name="content-copy" size={20} color="#007AFF" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.roomIdButton}
+                                onPress={handleShareRoomId}
+                            >
+                                <Icon name="share-variant" size={20} color="#007AFF" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
                 </View>
             ) : null}
 
@@ -804,10 +839,26 @@ const styles = StyleSheet.create({
         color: '#666',
         marginBottom: 5,
     },
+    roomIdActions: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
     roomIdText: {
         fontSize: 18,
         fontWeight: 'bold',
         color: '#007AFF',
+        flex: 1,
+    },
+    roomIdButtons: {
+        flexDirection: 'row',
+        marginLeft: 10,
+    },
+    roomIdButton: {
+        padding: 8,
+        marginLeft: 5,
+        borderRadius: 8,
+        backgroundColor: '#f0f0f0',
     },
     remoteStreamsList: {
         flex: 1,

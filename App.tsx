@@ -9,6 +9,7 @@ import React, { useEffect } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet } from 'react-native';
 import CallScreen from './src/screens/CallScreen';
 import { PermissionsAndroid, Platform } from 'react-native';
+import Toast from 'react-native-toast-message';
 
 const App = () => {
   useEffect(() => {
@@ -41,6 +42,10 @@ const App = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <CallScreen />
+      <Toast
+        position='bottom'
+        bottomOffset={30}
+      />
     </SafeAreaView>
   );
 };

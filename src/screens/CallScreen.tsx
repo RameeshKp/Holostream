@@ -5,16 +5,13 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    Alert,
+    Image,
 } from 'react-native';
 import VideoCall from '../components/VideoCall';
 import firestore from '@react-native-firebase/firestore';
+import { TOAST_TYPE } from '../utils/Toast';
+import { showToast } from '../utils/Toast';
 
-interface VideoCallProps {
-    roomId: string;
-    isBroadcaster: boolean;
-    onHangUp: () => void;
-}
 
 const CallScreen: React.FC = () => {
     const [roomId, setRoomId] = useState('');
@@ -35,7 +32,7 @@ const CallScreen: React.FC = () => {
 
     const joinExistingCall = async () => {
         if (!roomId.trim()) {
-            Alert.alert('Error', 'Please enter a room ID');
+            showToast(TOAST_TYPE.ERROR, 'Please enter a room ID');
             return;
         }
 
@@ -48,7 +45,7 @@ const CallScreen: React.FC = () => {
             );
 
             if (!activeRoom) {
-                Alert.alert('Error', 'Room does not exist or is not active');
+                showToast(TOAST_TYPE.ERROR, 'Room does not exist or is not active');
                 return;
             }
 
@@ -58,7 +55,7 @@ const CallScreen: React.FC = () => {
             // setRoomId(''); // Reset input after successful join
         } catch (error) {
             console.error('Error checking room:', error);
-            Alert.alert('Error', 'Failed to join room');
+            showToast(TOAST_TYPE.ERROR, 'Failed to join room');
         }
     };
 
@@ -77,7 +74,8 @@ const CallScreen: React.FC = () => {
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>HoloStream Video Call</Text>
+            <Text style={styles.title}>HoloStream</Text>
+            <Text style={styles.subtitle}>"Join or start a video conference instantly — connect, collaborate, and communicate with ease."</Text>
 
             <View style={styles.inputContainer}>
                 <TextInput
@@ -112,12 +110,25 @@ const styles = StyleSheet.create({
         backgroundColor: '#f5f5f5',
         justifyContent: 'center',
     },
+    logo: {
+        width: 100,
+        height: 100,
+        alignSelf: 'center',
+        marginBottom: 20,
+        borderRadius: 100,
+    },
     title: {
-        fontSize: 24,
+        fontSize: 32,
         fontWeight: 'bold',
         textAlign: 'center',
-        marginBottom: 30,
         color: '#333',
+    },
+    subtitle: {
+        fontSize: 14,
+        textAlign: 'center',
+        color: '#666',
+        marginTop: 5,
+        marginBottom: 15,
     },
     inputContainer: {
         marginBottom: 20,
