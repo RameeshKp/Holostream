@@ -18,6 +18,7 @@ import {
     MediaStreamTrack,
 } from 'react-native-webrtc';
 import firestore from '@react-native-firebase/firestore';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 interface VideoCallProps {
     roomId: string;
@@ -575,36 +576,48 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                             style={[styles.controlButton, !status.camera && styles.controlButtonDisabled]}
                             onPress={toggleVideo}
                         >
-                            <Text style={styles.controlButtonText}>
-                                {status.camera ? '📹' : '🚫'}
-                            </Text>
+                            <Icon
+                                name={status.camera ? "video" : "video-off"}
+                                size={24}
+                                color="#fff"
+                            />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.controlButton, !status.audio && styles.controlButtonDisabled]}
                             onPress={toggleAudio}
                         >
-                            <Text style={styles.controlButtonText}>
-                                {status.audio ? '🎤' : '🚫'}
-                            </Text>
+                            <Icon
+                                name={status.audio ? "microphone" : "microphone-off"}
+                                size={24}
+                                color="#fff"
+                            />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={styles.controlButton}
                             onPress={toggleCamera}
                         >
-                            <Text style={styles.controlButtonText}>🔄</Text>
+                            <Icon
+                                name="camera-flip"
+                                size={24}
+                                color="#fff"
+                            />
                         </TouchableOpacity>
                     </>
                 ) : (
                     <>
                         <View style={[styles.controlButton, !status.camera && styles.controlButtonDisabled]}>
-                            <Text style={styles.controlButtonText}>
-                                {status.camera ? '📹' : '🚫'}
-                            </Text>
+                            <Icon
+                                name={status.camera ? "video" : "video-off"}
+                                size={24}
+                                color="#fff"
+                            />
                         </View>
                         <View style={[styles.controlButton, !status.audio && styles.controlButtonDisabled]}>
-                            <Text style={styles.controlButtonText}>
-                                {status.audio ? '🎤' : '🚫'}
-                            </Text>
+                            <Icon
+                                name={status.audio ? "microphone" : "microphone-off"}
+                                size={24}
+                                color="#fff"
+                            />
                         </View>
                     </>
                 )}
@@ -809,9 +822,9 @@ const styles = StyleSheet.create({
         padding: 5,
     },
     controlButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: 'rgba(255,255,255,0.2)',
         justifyContent: 'center',
         alignItems: 'center',
@@ -819,10 +832,6 @@ const styles = StyleSheet.create({
     },
     controlButtonDisabled: {
         backgroundColor: 'rgba(255,0,0,0.3)',
-    },
-    controlButtonText: {
-        fontSize: 20,
-        color: '#fff',
     },
     disabledVideo: {
         backgroundColor: '#000',
