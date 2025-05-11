@@ -14,20 +14,46 @@ import { showToast } from '../../utils/Toast';
 import { styles } from './styles';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const TUTORIAL_KEY = '@holostream_tutorial_shown';
-
+/**
+ * CallScreen Component
+ * Main screen for managing video calls in HoloStream
+ * 
+ * Features:
+ * - Create new video call rooms
+ * - Join existing rooms using room codes
+ * - Interactive tutorial for first-time users
+ * - Room code sharing and copying
+ * 
+ * Flow:
+ * 1. User can create a new room or join existing one
+ * 2. Room code is generated/entered
+ * 3. Video call is initiated with appropriate role (broadcaster/viewer)
+ * 4. Tutorial overlay guides new users
+ */
 const CallScreen: React.FC = () => {
-    const [roomId, setRoomId] = useState('');
-    const [roomDocID, setRoomDocID] = useState('');
-    const [isInCall, setIsInCall] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [isBroadcaster, setIsBroadcaster] = useState(false);
-    const [showTutorial, setShowTutorial] = useState(false);
+    // State for room management
+    const [roomId, setRoomId] = useState(''); // Current room code
+    const [roomDocID, setRoomDocID] = useState(''); // Firestore document ID
+    const [isInCall, setIsInCall] = useState(false); // Call status
+    const [isLoading, setIsLoading] = useState(false); // Loading state
+    const [isBroadcaster, setIsBroadcaster] = useState(false); // User role
+    const [showTutorial, setShowTutorial] = useState(false); // Tutorial visibility
 
+    // AsyncStorage key for tutorial persistence
+    const TUTORIAL_KEY = '@holostream_tutorial_shown';
+
+    /**
+     * Check if tutorial has been shown before
+     * Shows tutorial only on first app launch
+     */
     useEffect(() => {
         checkTutorialStatus();
     }, []);
 
+    /**
+     * Checks AsyncStorage for tutorial status
+     * Shows tutorial if it hasn't been shown before
+     */
     const checkTutorialStatus = async () => {
         try {
             const tutorialShown = await AsyncStorage.getItem(TUTORIAL_KEY);
@@ -40,14 +66,26 @@ const CallScreen: React.FC = () => {
         }
     };
 
+    /**
+     * Manually show tutorial overlay
+     * Used when user clicks "See Instructions"
+     */
     const handleShowTutorial = () => {
         setShowTutorial(true);
     };
 
+    /**
+     * Generates a random 4-digit room code
+     * Used when creating new rooms
+     */
     const generateRoomId = () => {
         return Math.floor(1000 + Math.random() * 9000).toString();
     };
 
+    /**
+     * Initiates a new video call as broadcaster
+     * Creates new room with generated code
+     */
     const startNewCall = () => {
         const newRoomId = generateRoomId();
         setRoomId(newRoomId);
@@ -55,6 +93,10 @@ const CallScreen: React.FC = () => {
         setIsInCall(true);
     };
 
+    /**
+     * Joins an existing video call as viewer
+     * Validates room code and checks room status
+     */
     const joinExistingCall = async () => {
         setIsLoading(true);
         if (!roomId.trim()) {
@@ -64,9 +106,9 @@ const CallScreen: React.FC = () => {
         }
 
         try {
+            // Query Firestore for active room
             const roomRef: any = firestore().collection('rooms');
             const roomDocs: any = (await roomRef.get())._docs;
-            // Find room with matching roomId and active status
             const activeRoom = roomDocs.find((doc: any) =>
                 doc._data.roomId === roomId && doc._data.status === 'active'
             );
@@ -88,6 +130,10 @@ const CallScreen: React.FC = () => {
         }
     };
 
+    /**
+     * Tutorial Overlay Component
+     * Displays step-by-step instructions for using the app
+     */
     const TutorialOverlay = () => (
         <Modal
             visible={showTutorial}
@@ -125,6 +171,7 @@ const CallScreen: React.FC = () => {
         </Modal>
     );
 
+    // Render VideoCall component when in active call
     if (isInCall) {
         return <VideoCall
             roomId={roomId}

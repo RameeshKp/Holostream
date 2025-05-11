@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { showToast, TOAST_TYPE } from '../../utils/Toast';
 import { styles } from './styles';
+
 interface VideoCallProps {
     roomId: string;
     roomRefId?: string;
@@ -28,7 +29,25 @@ interface VideoCallProps {
     onHangUp: () => void;
 }
 
+/**
+ * VideoCall Component
+ * Handles WebRTC peer connections and video streaming between participants
+ * 
+ * Core Features:
+ * - Real-time video/audio streaming using WebRTC
+ * - Manual signaling using Firebase Firestore
+ * - Camera/microphone controls
+ * - Room management (create/join)
+ * 
+ * Signaling Process:
+ * 1. Broadcaster creates room and generates offer
+ * 2. Viewer joins room and receives offer
+ * 3. Viewer creates answer and sends back
+ * 4. ICE candidates are exchanged for NAT traversal
+ * 5. Peer connection established for media streaming
+ */
 const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster, onHangUp }) => {
+    // State for managing media streams and connection status
     const [localStream, setLocalStream] = useState<any>(null);
     const [remoteStreams, setRemoteStreams] = useState<any[]>([]);
     const [isConnecting, setIsConnecting] = useState(false);
@@ -37,12 +56,15 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     const [showRoomId, setShowRoomId] = useState(false);
     const [roomDocId, setRoomDocId] = useState<string | undefined>(roomRefId);
     const [streamsUpdateKey, setStreamsUpdateKey] = useState(0);
+
+    // Refs for maintaining WebRTC connections and streams
     const remoteStreamsRef = useRef<any[]>([]);
     const roomStatusUnsubscribe = useRef<(() => void) | null>(null);
-
     const peerConnections = useRef<{ [key: string]: RTCPeerConnection }>({});
     const localStreamRef = useRef<any>(null);
 
+    // WebRTC configuration for NAT traversal
+    // Uses Google's STUN servers to help establish peer connections
     const configuration = {
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
@@ -54,11 +76,17 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         iceCandidatePoolSize: 10,
     };
 
+    // Media control states
     const [isCameraEnabled, setIsCameraEnabled] = useState(true);
     const [isAudioEnabled, setIsAudioEnabled] = useState(true);
     const [isFrontCamera, setIsFrontCamera] = useState(true);
     const [participantStatus, setParticipantStatus] = useState<{ [key: string]: { camera: boolean, audio: boolean } }>({});
 
+    /**
+     * Updates participant's media status in Firestore
+     * Used to sync camera/audio state across peers
+     * This ensures all participants know the state of others' media
+     */
     const updateParticipantStatus = async (camera: boolean, audio: boolean) => {
         if (!roomDocId) return;
 
@@ -79,6 +107,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Initial setup: Get local media stream and set up Firestore listeners
+     * This is the entry point for establishing the video call
+     */
     useEffect(() => {
         setupLocalStream();
         setupFirestoreListeners();
@@ -88,6 +120,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         };
     }, [roomId]);
 
+    /**
+     * Initializes local media stream with camera and microphone
+     * Sets up the initial video/audio tracks for the local user
+     */
     const setupLocalStream = async () => {
         try {
             const stream = await mediaDevices.getUserMedia({
@@ -106,6 +142,14 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Sets up Firestore listeners for real-time updates
+     * Handles:
+     * - Room status changes (active/inactive)
+     * - Participant status updates (camera/audio state)
+     * - New participants joining
+     * - ICE candidates for peer connection
+     */
     const setupFirestoreListeners = () => {
         const roomRef: any = firestore().collection('rooms').doc(roomDocId);
 
@@ -146,7 +190,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             });
         });
 
-        // Listen for new participants
+        // Listen for new participants and handle WebRTC connection
         roomRef.collection('participants').onSnapshot((snapshot: any) => {
             snapshot.docChanges().forEach((change: any) => {
                 if (change.type === 'added') {
@@ -157,7 +201,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             });
         });
 
-        // Listen for ICE candidates
+        // Listen for ICE candidates from peers
         roomRef.collection('ice-candidates').onSnapshot((snapshot: any) => {
             snapshot.docChanges().forEach((change: any) => {
                 if (change.type === 'added') {
@@ -168,6 +212,11 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         });
     };
 
+    /**
+     * Handles new participant joining the room
+     * Creates peer connection and initiates WebRTC offer
+     * This is the start of the WebRTC signaling process
+     */
     const handleNewParticipant = async (participantId: string) => {
         if (isBroadcaster) {
             const pc = createPeerConnection(participantId);
@@ -189,9 +238,17 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Creates and configures a new WebRTC peer connection
+     * Sets up event handlers for:
+     * - ICE candidates (for NAT traversal)
+     * - Connection state changes
+     * - Incoming media tracks
+     */
     const createPeerConnection = (participantId: string) => {
         const pc = new RTCPeerConnection(configuration);
 
+        // Handle ICE candidates
         (pc as any).onicecandidate = (event: { candidate: RTCIceCandidate | null }) => {
             if (event.candidate) {
                 const roomRef = firestore().collection('rooms').doc(roomDocId);
@@ -203,12 +260,14 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             }
         };
 
+        // Handle connection state changes
         (pc as any).oniceconnectionstatechange = () => {
             if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
                 handleParticipantLeft(participantId);
             }
         };
 
+        // Handle incoming media tracks
         (pc as any).ontrack = (event: { streams: any[] }) => {
             if (event.streams && event.streams[0]) {
                 const newStream = event.streams[0];
@@ -222,6 +281,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             }
         };
 
+        // Add local tracks to peer connection
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach((track: any) => {
                 pc.addTrack(track, localStreamRef.current);
@@ -232,6 +292,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         return pc;
     };
 
+    /**
+     * Handles new ICE candidate from peer
+     * ICE candidates are used for NAT traversal to establish direct peer connections
+     */
     const handleNewICECandidate = async (candidate: any) => {
         const pc = peerConnections.current[candidate.participantId];
         if (pc) {
@@ -239,8 +303,12 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Handles participant leaving the room
+     * Cleans up peer connection and removes their stream
+     * Ensures proper resource cleanup when a participant disconnects
+     */
     const handleParticipantLeft = (participantId: string) => {
-
         // Close and remove the peer connection
         const pc = peerConnections.current[participantId];
         if (pc) {
@@ -248,11 +316,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             delete peerConnections.current[participantId];
         }
 
-        // Create a new array without the leaving participant's stream
+        // Remove participant's stream and stop all tracks
         const updatedStreams = remoteStreamsRef.current.filter(stream => {
             const isParticipantStream = stream.id.includes(participantId);
             if (isParticipantStream) {
-                // Stop all tracks in the stream
                 stream.getTracks().forEach((track: any) => {
                     track.stop();
                 });
@@ -260,15 +327,19 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             return !isParticipantStream;
         });
 
-        // Update the streams state
         setRemoteStreams(updatedStreams);
         setStreamsUpdateKey(prev => prev + 1);
     };
 
+    /**
+     * Initiates a new call as the broadcaster
+     * Creates room, peer connection, and WebRTC offer
+     * This is the entry point for starting a new video call
+     */
     const startCall = async () => {
         setIsConnecting(true);
         try {
-            // 1. Create room in Firestore
+            // Create room in Firestore
             const roomRef = await firestore().collection('rooms').add({
                 status: 'active',
                 createdAt: firestore.FieldValue.serverTimestamp(),
@@ -279,48 +350,24 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             // Initialize broadcaster status
             await updateParticipantStatus(true, true);
 
-            // 2. Create peer connection
+            // Create peer connection and generate offer
             const pc = createPeerConnection('broadcaster');
-
-            // 3. Create and set local description (offer)
             const offer = await pc.createOffer({
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true
             });
-            console.log("🚀 ~ startCall ~ offer:", offer)
             await pc.setLocalDescription(offer);
 
-            // 4. Save offer to Firestore
+            // Save offer to Firestore
             await roomRef.collection('offers').doc('broadcaster').set({
                 sdp: offer.sdp,
                 type: offer.type,
                 createdAt: firestore.FieldValue.serverTimestamp()
             });
 
-            // 5. Listen for answers
-            roomRef.collection('answers').onSnapshot((snapshot) => {
-                snapshot.docChanges().forEach(async (change) => {
-                    if (change.type === 'added') {
-                        const answer = change.doc.data();
-                        await pc.setRemoteDescription(new RTCSessionDescription({
-                            sdp: answer.sdp,
-                            type: answer.type
-                        }));
-                    }
-                });
-            });
-
-            // 6. Listen for ICE candidates from viewers
-            roomRef.collection('ice-candidates')
-                .where('participantId', '==', 'viewer')
-                .onSnapshot((snapshot) => {
-                    snapshot.docChanges().forEach(async (change) => {
-                        if (change.type === 'added') {
-                            const candidate = change.doc.data();
-                            await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
-                        }
-                    });
-                });
+            // Set up listeners for answers and ICE candidates
+            setupAnswerListener(roomRef, pc);
+            setupICECandidateListener(roomRef, pc);
 
             setShowRoomId(true);
             setIsConnected(true);
@@ -333,71 +380,49 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Joins an existing call as a viewer
+     * Retrieves offer, creates answer, and establishes connection
+     * This is the entry point for joining an existing video call
+     */
     const joinCall = async () => {
         setIsConnecting(true);
         try {
             // Initialize viewer status
             await updateParticipantStatus(true, true);
 
-            // 1. Get the room reference
+            // Get room reference and broadcaster's offer
             const roomRef = firestore().collection('rooms').doc(roomDocId);
-            // 2. Get the broadcaster's offer
             const offerDoc = await roomRef.collection('offers').doc('broadcaster').get();
+
             if (!offerDoc.exists) {
                 throw new Error('No offer found from broadcaster');
             }
 
+            // Create peer connection and set remote description
             const offerData = offerDoc.data() as { sdp: string; type: string };
-            // 3. Create peer connection
             const pc = createPeerConnection('viewer');
-            // 4. Set remote description (broadcaster's offer)
             await pc.setRemoteDescription(new RTCSessionDescription({
                 sdp: offerData.sdp,
                 type: offerData.type
             }));
 
-            // 5. Create and set local description (answer)
+            // Create and save answer
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-
-            // 6. Save answer to Firestore
             await roomRef.collection('answers').doc('viewer').set({
                 sdp: answer.sdp,
                 type: answer.type,
                 createdAt: firestore.FieldValue.serverTimestamp()
             });
 
-            // 7. Listen for ICE candidates from broadcaster
-            roomRef.collection('ice-candidates')
-                .where('participantId', '==', 'broadcaster')
-                .onSnapshot((snapshot) => {
-                    snapshot.docChanges().forEach(async (change) => {
-                        if (change.type === 'added') {
-                            const candidate = change.doc.data();
-                            try {
-                                await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
-                            } catch (err) {
-                                console.error('Error adding ICE candidate:', err);
-                            }
-                        }
-                    });
-                });
+            // Set up ICE candidate listener
+            setupICECandidateListener(roomRef, pc);
 
-            // 8. Listen for any existing ICE candidates from broadcaster
-            const existingCandidates = await roomRef.collection('ice-candidates')
-                .where('participantId', '==', 'broadcaster')
-                .get();
+            // Add existing ICE candidates
+            await addExistingICECandidates(roomRef, pc);
 
-            for (const doc of existingCandidates.docs) {
-                const candidate = doc.data();
-                try {
-                    await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
-                } catch (err) {
-                    console.error('Error adding existing ICE candidate:', err);
-                }
-            }
             setIsConnected(true);
-
             showToast(TOAST_TYPE.SUCCESS, 'You have joined the call');
         } catch (err) {
             console.error('Error joining call:', err);
@@ -407,41 +432,23 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Ends the call and cleans up resources
+     * Updates room status and removes participant data
+     * Ensures proper cleanup of all WebRTC resources
+     */
     const hangUp = async () => {
         try {
             setIsHangUp(true);
-            // Unsubscribe from room status listener
-            if (roomStatusUnsubscribe.current) {
-                roomStatusUnsubscribe.current();
-                roomStatusUnsubscribe.current = null;
-            }
 
-            // Close all peer connections
-            Object.values(peerConnections.current).forEach((pc) => {
-                pc.close();
-            });
-            peerConnections.current = {};
-            setRemoteStreams([]);
-            setStreamsUpdateKey(prev => prev + 1);
+            // Clean up listeners and connections
+            cleanupConnections();
 
-            // Stop all local tracks
-            if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach((track: any) => {
-                    track.stop();
-                });
-            }
-
-            // If broadcaster, update room status to inactive
+            // Update room status if broadcaster
             if (isBroadcaster && roomDocId) {
-                const roomRef = firestore().collection('rooms').doc(roomDocId);
-                const roomDoc: any = await roomRef.get();
-                if (roomDoc._exists) {
-                    await roomRef.update({
-                        status: 'inactive',
-                        endedAt: firestore.FieldValue.serverTimestamp()
-                    });
-                }
+                await updateRoomStatus();
             }
+
             setIsConnected(false);
             setIsHangUp(false);
             onHangUp();
@@ -453,68 +460,22 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
-    const cleanup = async () => {
-        try {
-            // Unsubscribe from room status listener
-            if (roomStatusUnsubscribe.current) {
-                roomStatusUnsubscribe.current();
-                roomStatusUnsubscribe.current = null;
-            }
-
-            // Close all peer connections
-            Object.values(peerConnections.current).forEach((pc) => {
-                pc.close();
-            });
-            peerConnections.current = {};
-
-            // Stop all local tracks
-            if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach((track: any) => {
-                    track.stop();
-                });
-            }
-
-            // Clear remote streams
-            setRemoteStreams([]);
-            setStreamsUpdateKey(prev => prev + 1);
-
-            // If broadcaster, update room status to inactive
-            if (isBroadcaster && roomDocId) {
-                const roomRef = firestore().collection('rooms').doc(roomDocId);
-                const roomDoc: any = await roomRef.get();
-                if (roomDoc._exists) {
-                    await roomRef.update({
-                        status: 'inactive',
-                        endedAt: firestore.FieldValue.serverTimestamp()
-                    });
-                }
-            }
-
-            // Remove participant status
-            if (roomDocId) {
-                const statusRef = firestore()
-                    .collection('rooms')
-                    .doc(roomDocId)
-                    .collection('participant-status')
-                    .doc(isBroadcaster ? 'broadcaster' : 'viewer');
-                await statusRef.delete();
-            }
-
-            onHangUp();
-        } catch (err) {
-            console.error('Error during cleanup:', err);
-        }
-    };
-
+    /**
+     * Toggles camera between front and back
+     * Updates video track in peer connections
+     * Handles camera switching while maintaining the call
+     */
     const toggleCamera = async () => {
         try {
             setIsCameraEnabled(true);
             if (localStreamRef.current) {
+                // Stop current video track
                 const currentTracks = localStreamRef.current.getVideoTracks();
                 if (currentTracks.length > 0) {
                     currentTracks[0].stop();
                 }
 
+                // Get new stream with opposite camera
                 const newStream = await mediaDevices.getUserMedia({
                     audio: isAudioEnabled,
                     video: {
@@ -525,14 +486,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     },
                 });
 
-                // Update all peer connections with the new video track
-                Object.values(peerConnections.current).forEach((pc) => {
-                    const senders = pc.getSenders();
-                    const videoSender = senders.find(sender => sender.track?.kind === 'video');
-                    if (videoSender) {
-                        videoSender.replaceTrack(newStream.getVideoTracks()[0]);
-                    }
-                });
+                // Update video track in all peer connections
+                updateVideoTrackInConnections(newStream);
 
                 setLocalStream(newStream);
                 localStreamRef.current = newStream;
@@ -544,6 +499,11 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Toggles video stream on/off
+     * Updates participant status in Firestore
+     * Handles video muting while maintaining the call
+     */
     const toggleVideo = async () => {
         if (localStreamRef.current) {
             const videoTracks = localStreamRef.current.getVideoTracks();
@@ -556,6 +516,11 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Toggles audio stream on/off
+     * Updates participant status in Firestore
+     * Handles audio muting while maintaining the call
+     */
     const toggleAudio = async () => {
         if (localStreamRef.current) {
             const audioTracks = localStreamRef.current.getAudioTracks();
@@ -681,6 +646,141 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    /**
+     * Sets up listener for WebRTC answers
+     */
+    const setupAnswerListener = (roomRef: any, pc: RTCPeerConnection) => {
+        roomRef.collection('answers').onSnapshot((snapshot: any) => {
+            snapshot.docChanges().forEach(async (change: any) => {
+                if (change.type === 'added') {
+                    const answer = change.doc.data();
+                    await pc.setRemoteDescription(new RTCSessionDescription({
+                        sdp: answer.sdp,
+                        type: answer.type
+                    }));
+                }
+            });
+        });
+    };
+
+    /**
+     * Sets up listener for ICE candidates
+     */
+    const setupICECandidateListener = (roomRef: any, pc: RTCPeerConnection) => {
+        const participantId = isBroadcaster ? 'viewer' : 'broadcaster';
+        roomRef.collection('ice-candidates')
+            .where('participantId', '==', participantId)
+            .onSnapshot((snapshot: any) => {
+                snapshot.docChanges().forEach(async (change: any) => {
+                    if (change.type === 'added') {
+                        const candidate = change.doc.data();
+                        try {
+                            await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
+                        } catch (err) {
+                            console.error('Error adding ICE candidate:', err);
+                        }
+                    }
+                });
+            });
+    };
+
+    /**
+     * Adds existing ICE candidates to peer connection
+     */
+    const addExistingICECandidates = async (roomRef: any, pc: RTCPeerConnection) => {
+        const participantId = isBroadcaster ? 'viewer' : 'broadcaster';
+        const existingCandidates = await roomRef.collection('ice-candidates')
+            .where('participantId', '==', participantId)
+            .get();
+
+        for (const doc of existingCandidates.docs) {
+            const candidate = doc.data();
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
+            } catch (err) {
+                console.error('Error adding existing ICE candidate:', err);
+            }
+        }
+    };
+
+    /**
+     * Updates video track in all peer connections
+     */
+    const updateVideoTrackInConnections = (newStream: any) => {
+        Object.values(peerConnections.current).forEach((pc) => {
+            const senders = pc.getSenders();
+            const videoSender = senders.find(sender => sender.track?.kind === 'video');
+            if (videoSender) {
+                videoSender.replaceTrack(newStream.getVideoTracks()[0]);
+            }
+        });
+    };
+
+    /**
+     * Cleans up all connections and resources
+     */
+    const cleanupConnections = async () => {
+        // Unsubscribe from room status listener
+        if (roomStatusUnsubscribe.current) {
+            roomStatusUnsubscribe.current();
+            roomStatusUnsubscribe.current = null;
+        }
+
+        // Close all peer connections
+        Object.values(peerConnections.current).forEach((pc) => {
+            pc.close();
+        });
+        peerConnections.current = {};
+        setRemoteStreams([]);
+        setStreamsUpdateKey(prev => prev + 1);
+
+        // Stop all local tracks
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach((track: any) => {
+                track.stop();
+            });
+        }
+
+        // Remove participant status
+        if (roomDocId) {
+            const statusRef = firestore()
+                .collection('rooms')
+                .doc(roomDocId)
+                .collection('participant-status')
+                .doc(isBroadcaster ? 'broadcaster' : 'viewer');
+            await statusRef.delete();
+        }
+    };
+
+    /**
+     * Updates room status to inactive
+     */
+    const updateRoomStatus = async () => {
+        const roomRef = firestore().collection('rooms').doc(roomDocId);
+        const roomDoc: any = await roomRef.get();
+        if (roomDoc._exists) {
+            await roomRef.update({
+                status: 'inactive',
+                endedAt: firestore.FieldValue.serverTimestamp()
+            });
+        }
+    };
+
+    /**
+     * Cleanup function for component unmount
+     */
+    const cleanup = async () => {
+        try {
+            await cleanupConnections();
+            if (isBroadcaster && roomDocId) {
+                await updateRoomStatus();
+            }
+            onHangUp();
+        } catch (err) {
+            console.error('Error during cleanup:', err);
+        }
+    };
+
     return (
         <View style={styles.container}>
             {(isBroadcaster && showRoomId) || !isBroadcaster ? (
@@ -781,7 +881,5 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         </View>
     );
 };
-
-
 
 export default VideoCall; 

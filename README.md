@@ -1,117 +1,127 @@
-# HoloStream Video Call App
+# HoloStream - WebRTC Video Conferencing App
 
-A React Native video calling application that uses WebRTC for peer-to-peer video communication and Firebase for signaling.
+HoloStream is a real-time video conferencing application built with React Native and WebRTC, featuring peer-to-peer video calls with manual signaling.
 
 ## Features
 
-- Real-time video and audio communication
-- Support for multiple participants
-- Room-based calling system
-- Simple and intuitive user interface
-- Cross-platform (iOS and Android)
+- Create and join video rooms with unique room codes
+- Real-time peer-to-peer video and audio streaming
+- Camera and microphone controls
+- Room code sharing
+- Cross-platform support (iOS & Android)
 
-## Prerequisites
+## Technical Architecture
 
-- Node.js (v14 or later)
-- React Native development environment set up
-- Firebase project with Firestore enabled
-- iOS: XCode (for iOS development)
-- Android: Android Studio (for Android development)
+### Signaling Process
 
-## Installation
+HoloStream uses Firebase Firestore for signaling, implementing a manual WebRTC signaling process:
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd HoloStream
-```
+1. **Room Creation (Broadcaster)**
+   - Generates a unique 4-digit room code
+   - Creates a room document in Firestore
+   - Initializes participant status
+   - Creates peer connection
+   - Generates and stores offer in Firestore
 
-2. Install dependencies:
-```bash
-npm install
-```
+2. **Room Joining (Viewer)**
+   - Enters room code
+   - Retrieves broadcaster's offer from Firestore
+   - Creates peer connection
+   - Generates and stores answer in Firestore
+   - Establishes WebRTC connection
 
-3. iOS specific setup:
-```bash
-cd ios
-pod install
-cd ..
-```
+3. **ICE Candidate Exchange**
+   - Both peers collect ICE candidates
+   - Store candidates in Firestore
+   - Exchange candidates through Firestore
+   - Add candidates to peer connections
 
-4. Configure Firebase:
-   - Create a new Firebase project
+### Setup Instructions
+
+1. **Prerequisites**
+   ```bash
+   Node.js >= 14
+   React Native development environment
+   iOS: XCode
+   Android: Android Studio
+   ```
+
+2. **Installation**
+   ```bash
+   # Clone the repository
+   git clone [repository-url]
+   cd HoloStream
+
+   # Install dependencies
+   npm install
+
+   # iOS setup
+   cd ios
+   pod install
+   cd ..
+   ```
+
+3. **Firebase Configuration**
+   - Create a Firebase project
    - Enable Firestore
-   - Add your iOS and Android apps to the Firebase project
-   - Download and add the configuration files:
-     - iOS: `GoogleService-Info.plist` to the iOS project
-     - Android: `google-services.json` to the android/app directory
+   - Add your Firebase configuration to the app
+   - Set up Firestore security rules
 
-5. Update Firebase configuration:
-   - For iOS: Update the Firebase configuration in `ios/Podfile`
-   - For Android: Update the Firebase configuration in `android/app/build.gradle`
 
-## Running the App
 
-### iOS
-```bash
-npm run ios
+4. **Running the App**
+   ```bash
+   # iOS
+   npm run ios
+
+   # Android
+   npm run android
+   ```
+
+## WebRTC Configuration
+
+The app uses the following STUN servers for NAT traversal:
+```javascript
+{
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+    ],
+    iceCandidatePoolSize: 10,
+}
 ```
 
-### Android
-```bash
-npm run android
-```
+## Room Management
 
-## Usage
+- Rooms are created with a unique 4-digit code
+- Room status is tracked in Firestore
+- Rooms become inactive when the broadcaster ends the call
+- Participant status (camera/audio) is synchronized across peers
 
-1. Start a New Call:
-   - Tap "Start New Call"
-   - The app will generate a room ID
-   - Share this room ID with participants
+## Security Considerations
 
-2. Join a Call:
-   - Enter the room ID provided by the host
-   - Tap "Join Call"
-
-3. During the Call:
-   - View local and remote video streams
-   - Use the "Hang Up" button to end the call
-
-## Permissions
-
-The app requires the following permissions:
-- Camera access
-- Microphone access
-- Internet connectivity
-
-## Technical Details
-
-- Built with React Native
-- Uses react-native-webrtc for video/audio streaming
-- Firebase Firestore for signaling
-- Implements WebRTC peer connections
-- Supports multiple concurrent connections
+- Room codes are randomly generated
+- Firestore security rules should be configured to:
+  - Allow read/write access only to active rooms
+  - Validate room status before allowing connections
+  - Clean up inactive rooms and their data
 
 ## Troubleshooting
 
-1. Camera/Microphone not working:
-   - Ensure permissions are granted
-   - Check device settings
-   - Restart the app
-
-2. Connection issues:
+1. **Connection Issues**
    - Check internet connectivity
-   - Verify room ID is correct
    - Ensure Firebase configuration is correct
 
-## Contributing
+2. **Media Access**
+   - Grant camera and microphone permissions
+   - Check device settings for app permissions
 
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+3. **Room Joining**
+   - Verify room code is correct
+   - Ensure room is active
+   - Check Firestore connectivity
 
-## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
