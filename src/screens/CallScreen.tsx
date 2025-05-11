@@ -91,11 +91,11 @@ const CallScreen: React.FC = () => {
 
             <View style={styles.buttonContainer}>
                 <TouchableOpacity style={styles.button} onPress={startNewCall}>
-                    <Text style={styles.buttonText}>Start New Call</Text>
+                    <Text style={styles.buttonText}>Create New Room</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.button} onPress={joinExistingCall}>
-                    <Text style={styles.buttonText}>Join Call</Text>
+                    <Text style={styles.buttonText}>Join Room</Text>
                 </TouchableOpacity>
             </View>
         </View>

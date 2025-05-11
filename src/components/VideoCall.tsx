@@ -27,6 +27,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     const [localStream, setLocalStream] = useState<any>(null);
     const [remoteStreams, setRemoteStreams] = useState<any[]>([]);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [isConnected, setIsConnected] = useState(false);
     const [showRoomId, setShowRoomId] = useState(false);
     const [roomDocId, setRoomDocId] = useState<string | undefined>(roomRefId);
 
@@ -232,6 +233,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 });
 
             setShowRoomId(true);
+            setIsConnected(true);
             Alert.alert('Success', 'Call started successfully');
         } catch (err) {
             console.error('Error starting call:', err);
@@ -303,6 +305,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     console.error('Error adding existing ICE candidate:', err);
                 }
             }
+            setIsConnected(true);
 
             Alert.alert('Success', 'Joined call successfully');
         } catch (err) {
@@ -340,7 +343,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     });
                 }
             }
-
+            setIsConnected(false);
             onHangUp();
         } catch (err) {
             console.error('Error during hang up:', err);
@@ -383,12 +386,13 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
     return (
         <View style={styles.container}>
-            {isBroadcaster && showRoomId && (
+            {(isBroadcaster && showRoomId) || !isBroadcaster ? (
                 <View style={styles.roomIdContainer}>
                     <Text style={styles.roomIdLabel}>Share this Room ID:</Text>
                     <Text style={styles.roomIdText}>{roomId}</Text>
                 </View>
-            )}
+            ) : null}
+
             <ScrollView style={styles.streamsContainer}>
                 {localStream && (
                     <View style={styles.localStream}>
@@ -417,7 +421,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
             <View style={styles.controls}>
                 {isBroadcaster ? (
-                    <TouchableOpacity
+                    !isConnected && <TouchableOpacity
                         style={styles.button}
                         onPress={startCall}
                         disabled={isConnecting}
@@ -427,7 +431,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                         </Text>
                     </TouchableOpacity>
                 ) : (
-                    <TouchableOpacity
+                    !isConnected && <TouchableOpacity
                         style={styles.button}
                         onPress={joinCall}
                         disabled={isConnecting}
@@ -438,12 +442,17 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     </TouchableOpacity>
                 )}
 
-                <TouchableOpacity
+                {isConnected ? <TouchableOpacity
                     style={[styles.button, styles.hangUpButton]}
                     onPress={hangUp}
                 >
                     <Text style={styles.buttonText}>Hang Up</Text>
-                </TouchableOpacity>
+                </TouchableOpacity> : <TouchableOpacity
+                    style={[styles.button, styles.hangUpButton]}
+                    onPress={onHangUp}
+                >
+                    <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>}
             </View>
         </View>
     );
