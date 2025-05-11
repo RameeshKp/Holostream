@@ -12,8 +12,10 @@ import {
     RTCPeerConnection,
     RTCIceCandidate,
     RTCSessionDescription,
-    mediaDevices,
     RTCView,
+    MediaStream,
+    mediaDevices,
+    MediaStreamTrack,
 } from 'react-native-webrtc';
 import firestore from '@react-native-firebase/firestore';
 
@@ -48,6 +50,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         ],
         iceCandidatePoolSize: 10,
     };
+
+    const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+    const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+    const [isFrontCamera, setIsFrontCamera] = useState(true);
 
     useEffect(() => {
         setupLocalStream();
@@ -441,6 +447,104 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    const toggleCamera = async () => {
+        try {
+            setIsCameraEnabled(true);
+            if (localStreamRef.current) {
+                const currentTracks = localStreamRef.current.getVideoTracks();
+                if (currentTracks.length > 0) {
+                    currentTracks[0].stop();
+                }
+
+                const newStream = await mediaDevices.getUserMedia({
+                    audio: isAudioEnabled,
+                    video: {
+                        width: { min: 640 },
+                        height: { min: 480 },
+                        frameRate: { min: 30 },
+                        facingMode: isFrontCamera ? 'environment' : 'user'
+                    },
+                });
+
+                // Update all peer connections with the new video track
+                Object.values(peerConnections.current).forEach((pc) => {
+                    const senders = pc.getSenders();
+                    const videoSender = senders.find(sender => sender.track?.kind === 'video');
+                    if (videoSender) {
+                        videoSender.replaceTrack(newStream.getVideoTracks()[0]);
+                    }
+                });
+
+                setLocalStream(newStream);
+                localStreamRef.current = newStream;
+                setIsFrontCamera(!isFrontCamera);
+            }
+        } catch (err) {
+            console.error('Error switching camera:', err);
+            Alert.alert('Error', 'Failed to switch camera');
+        }
+    };
+
+    const toggleVideo = () => {
+        if (localStreamRef.current) {
+            const videoTracks = localStreamRef.current.getVideoTracks();
+            videoTracks.forEach((track: MediaStreamTrack) => {
+                track.enabled = !isCameraEnabled;
+            });
+            setIsCameraEnabled(!isCameraEnabled);
+        }
+    };
+
+    const toggleAudio = () => {
+        if (localStreamRef.current) {
+            const audioTracks = localStreamRef.current.getAudioTracks();
+            audioTracks.forEach((track: MediaStreamTrack) => {
+                track.enabled = !isAudioEnabled;
+            });
+            setIsAudioEnabled(!isAudioEnabled);
+        }
+    };
+
+    const renderStreamControls = (isLocal: boolean) => (
+        <View style={styles.streamControls}>
+            {isLocal ? (
+                <>
+                    <TouchableOpacity
+                        style={[styles.controlButton, !isCameraEnabled && styles.controlButtonDisabled]}
+                        onPress={toggleVideo}
+                    >
+                        <Text style={styles.controlButtonText}>
+                            {isCameraEnabled ? '📹' : '🚫'}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.controlButton, !isAudioEnabled && styles.controlButtonDisabled]}
+                        onPress={toggleAudio}
+                    >
+                        <Text style={styles.controlButtonText}>
+                            {isAudioEnabled ? '🎤' : '🚫'}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.controlButton}
+                        onPress={toggleCamera}
+                    >
+                        <Text style={styles.controlButtonText}>🔄</Text>
+                    </TouchableOpacity>
+                </>
+            ) : (
+                <>
+                    <View style={[styles.controlButton, styles.controlButtonDisabled]}>
+                        <Text style={styles.controlButtonText}>📹</Text>
+                    </View>
+                    <View style={[styles.controlButton, styles.controlButtonDisabled]}>
+                        <Text style={styles.controlButtonText}>🎤</Text>
+                    </View>
+                </>
+            )}
+        </View>
+    );
+
     const renderRemoteStream = ({ item: stream, index }: { item: any; index: number }) => {
         return (
             <View style={styles.remoteStream}>
@@ -451,6 +555,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     mirror={true}
                 />
                 <Text style={styles.streamLabel}>Remote Stream {index + 1}</Text>
+                {renderStreamControls(false)}
             </View>
         );
     };
@@ -474,6 +579,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                             mirror={true}
                         />
                         <Text style={styles.streamLabel}>Local Stream</Text>
+                        {renderStreamControls(true)}
                     </View>
                 )}
 
@@ -604,6 +710,31 @@ const styles = StyleSheet.create({
     },
     remoteStreamsList: {
         flex: 1,
+    },
+    streamControls: {
+        position: 'absolute',
+        bottom: 10,
+        right: 10,
+        flexDirection: 'row',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 20,
+        padding: 5,
+    },
+    controlButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginHorizontal: 5,
+    },
+    controlButtonDisabled: {
+        backgroundColor: 'rgba(255,0,0,0.3)',
+    },
+    controlButtonText: {
+        fontSize: 20,
+        color: '#fff',
     },
 });
 
