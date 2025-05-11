@@ -80,28 +80,53 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     const [isCameraEnabled, setIsCameraEnabled] = useState(true);
     const [isAudioEnabled, setIsAudioEnabled] = useState(true);
     const [isFrontCamera, setIsFrontCamera] = useState(true);
-    const [participantStatus, setParticipantStatus] = useState<{ [key: string]: { camera: boolean, audio: boolean } }>({});
+    const [participantStatus, setParticipantStatus] = useState<{
+        broadcaster: { camera: boolean; audio: boolean };
+        viewer: { camera: boolean; audio: boolean };
+    }>({
+        broadcaster: { camera: true, audio: true },
+        viewer: { camera: true, audio: true }
+    });
+
+    // Add new refs for status listeners
+    const statusUnsubscribeRef = useRef<(() => void) | null>(null);
+    const participantsUnsubscribeRef = useRef<(() => void) | null>(null);
+    const iceCandidatesUnsubscribeRef = useRef<(() => void) | null>(null);
 
     /**
-     * Updates participant's media status in Firestore
-     * Used to sync camera/audio state across peers
-     * This ensures all participants know the state of others' media
+     * Updates participant's media status in Firestore and local state
      */
     const updateParticipantStatus = async (camera: boolean, audio: boolean) => {
-        if (!roomDocId) return;
+        if (!roomDocId) {
+            return;
+        }
 
         try {
+            const participantId = isBroadcaster ? 'broadcaster' : 'viewer';
+
+
+            // Update local state immediately
+            setParticipantStatus(prev => {
+                const newStatus = {
+                    ...prev,
+                    [participantId]: { camera, audio }
+                };
+                return newStatus;
+            });
+
+            // Update Firestore
             const statusRef = firestore()
                 .collection('rooms')
                 .doc(roomDocId)
                 .collection('participant-status')
-                .doc(isBroadcaster ? 'broadcaster' : 'viewer');
+                .doc(participantId);
 
             await statusRef.set({
                 camera,
                 audio,
                 updatedAt: firestore.FieldValue.serverTimestamp()
             });
+
         } catch (err) {
             console.error('Error updating participant status:', err);
         }
@@ -144,14 +169,24 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
     /**
      * Sets up Firestore listeners for real-time updates
-     * Handles:
-     * - Room status changes (active/inactive)
-     * - Participant status updates (camera/audio state)
-     * - New participants joining
-     * - ICE candidates for peer connection
      */
     const setupFirestoreListeners = () => {
-        const roomRef: any = firestore().collection('rooms').doc(roomDocId);
+        if (!roomDocId) {
+            return;
+        }
+
+        const roomRef = firestore().collection('rooms').doc(roomDocId);
+
+        // Cleanup existing listeners
+        if (statusUnsubscribeRef.current) {
+            statusUnsubscribeRef.current();
+        }
+        if (participantsUnsubscribeRef.current) {
+            participantsUnsubscribeRef.current();
+        }
+        if (iceCandidatesUnsubscribeRef.current) {
+            iceCandidatesUnsubscribeRef.current();
+        }
 
         // Listen for room status changes (for viewers)
         if (!isBroadcaster) {
@@ -160,7 +195,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             }
 
             roomStatusUnsubscribe.current = roomRef.onSnapshot((doc: any) => {
-                const exists: any = doc._exists;
+                const exists = doc._exists;
                 if (exists === true) {
                     const roomData = doc.data();
                     if (roomData?.status === 'inactive') {
@@ -175,41 +210,57 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
 
         // Listen for participant status changes
-        roomRef.collection('participant-status').onSnapshot((snapshot: any) => {
-            snapshot.docChanges().forEach((change: any) => {
-                if (change.type === 'added' || change.type === 'modified') {
-                    const status = change.doc.data();
-                    setParticipantStatus(prev => ({
-                        ...prev,
-                        [change.doc.id]: {
-                            camera: status.camera,
-                            audio: status.audio
-                        }
-                    }));
-                }
+        statusUnsubscribeRef.current = roomRef.collection('participant-status')
+            .onSnapshot((snapshot: any) => {
+                snapshot.docChanges().forEach((change: any) => {
+                    if (change.type === 'added' || change.type === 'modified') {
+                        const status = change.doc.data();
+                        const participantId = change.doc.id;
+
+
+                        // Update local state
+                        setParticipantStatus(prev => {
+                            const newStatus = {
+                                ...prev,
+                                [participantId]: {
+                                    camera: status.camera,
+                                    audio: status.audio
+                                }
+                            };
+                            return newStatus;
+                        });
+                    }
+                });
+            }, (error: any) => {
+                console.error('Error in status listener:', error);
             });
-        });
 
         // Listen for new participants and handle WebRTC connection
-        roomRef.collection('participants').onSnapshot((snapshot: any) => {
-            snapshot.docChanges().forEach((change: any) => {
-                if (change.type === 'added') {
-                    handleNewParticipant(change.doc.id);
-                } else if (change.type === 'removed') {
-                    handleParticipantLeft(change.doc.id);
-                }
+        participantsUnsubscribeRef.current = roomRef.collection('participants')
+            .onSnapshot((snapshot: any) => {
+                snapshot.docChanges().forEach((change: any) => {
+                    if (change.type === 'added') {
+                        handleNewParticipant(change.doc.id);
+                    } else if (change.type === 'removed') {
+                        handleParticipantLeft(change.doc.id);
+                    }
+                });
+            }, (error: any) => {
+                console.error('Error in participants listener:', error);
             });
-        });
 
         // Listen for ICE candidates from peers
-        roomRef.collection('ice-candidates').onSnapshot((snapshot: any) => {
-            snapshot.docChanges().forEach((change: any) => {
-                if (change.type === 'added') {
-                    const candidate = change.doc.data();
-                    handleNewICECandidate(candidate);
-                }
+        iceCandidatesUnsubscribeRef.current = roomRef.collection('ice-candidates')
+            .onSnapshot((snapshot: any) => {
+                snapshot.docChanges().forEach((change: any) => {
+                    if (change.type === 'added') {
+                        const candidate = change.doc.data();
+                        handleNewICECandidate(candidate);
+                    }
+                });
+            }, (error: any) => {
+                console.error('Error in ICE candidates listener:', error);
             });
-        });
     };
 
     /**
@@ -533,10 +584,12 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
-    const renderStreamControls = (isLocal: boolean, participantId: string = '') => {
+    const renderStreamControls = (isLocal: boolean) => {
+        const participantId = isLocal ? (isBroadcaster ? 'broadcaster' : 'viewer') : (isBroadcaster ? 'viewer' : 'broadcaster');
         const status = isLocal ?
             { camera: isCameraEnabled, audio: isAudioEnabled } :
-            participantStatus[participantId] || { camera: true, audio: true };
+            participantStatus[participantId];
+
 
         return (
             <View style={styles.streamControls}>
@@ -597,17 +650,11 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
     const renderRemoteStream = ({ item: stream, index }: { item: any; index: number }) => {
         const participantId = isBroadcaster ? 'viewer' : 'broadcaster';
-        const status = participantStatus[participantId] || { camera: true, audio: true };
+        const status = participantStatus[participantId];
 
         return (
             <View style={styles.remoteStream}>
-                <RTCView
-                    streamURL={stream.toURL()}
-                    style={styles.videoStream}
-                    objectFit="cover"
-                    mirror={true}
-                />
-                {/* {status.camera ? (
+                {status.camera ? (
                     <RTCView
                         streamURL={stream.toURL()}
                         style={styles.videoStream}
@@ -618,9 +665,9 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     <View style={[styles.videoStream, styles.disabledVideo]}>
                         <Text style={styles.disabledVideoText}>Camera Off</Text>
                     </View>
-                )} */}
-                <Text style={styles.streamLabel}>Remote Stream {index + 1}</Text>
-                {/* {renderStreamControls(false, participantId)} */}
+                )}
+                <Text style={styles.streamLabel}>Participant {index + 1}</Text>
+                {renderStreamControls(false)}
             </View>
         );
     };
@@ -720,10 +767,22 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
      * Cleans up all connections and resources
      */
     const cleanupConnections = async () => {
-        // Unsubscribe from room status listener
+        // Unsubscribe from all listeners
         if (roomStatusUnsubscribe.current) {
             roomStatusUnsubscribe.current();
             roomStatusUnsubscribe.current = null;
+        }
+        if (statusUnsubscribeRef.current) {
+            statusUnsubscribeRef.current();
+            statusUnsubscribeRef.current = null;
+        }
+        if (participantsUnsubscribeRef.current) {
+            participantsUnsubscribeRef.current();
+            participantsUnsubscribeRef.current = null;
+        }
+        if (iceCandidatesUnsubscribeRef.current) {
+            iceCandidatesUnsubscribeRef.current();
+            iceCandidatesUnsubscribeRef.current = null;
         }
 
         // Close all peer connections
@@ -781,6 +840,24 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         }
     };
 
+    // Add useEffect to ensure listeners are set up when roomDocId changes
+    useEffect(() => {
+        if (roomDocId) {
+            setupFirestoreListeners();
+        }
+        return () => {
+            if (statusUnsubscribeRef.current) {
+                statusUnsubscribeRef.current();
+            }
+            if (participantsUnsubscribeRef.current) {
+                participantsUnsubscribeRef.current();
+            }
+            if (iceCandidatesUnsubscribeRef.current) {
+                iceCandidatesUnsubscribeRef.current();
+            }
+        };
+    }, [roomDocId]);
+
     return (
         <View style={styles.container}>
             {(isBroadcaster && showRoomId) || !isBroadcaster ? (
@@ -821,7 +898,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                                 <Text style={styles.disabledVideoText}>Camera Off</Text>
                             </View>
                         )}
-                        <Text style={styles.streamLabel}>Local Stream</Text>
+                        <Text style={styles.streamLabel}>My Stream</Text>
                         {renderStreamControls(true)}
                     </View>
                 )}
