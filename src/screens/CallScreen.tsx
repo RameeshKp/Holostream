@@ -86,6 +86,9 @@ const CallScreen: React.FC = () => {
                     value={roomId}
                     onChangeText={setRoomId}
                     autoCapitalize="none"
+                    keyboardType='numeric'
+                    returnKeyType='next'
+                    onSubmitEditing={joinExistingCall}
                 />
             </View>
 
