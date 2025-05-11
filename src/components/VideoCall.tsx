@@ -6,6 +6,7 @@ import {
     TouchableOpacity,
     Text,
     Alert,
+    FlatList,
 } from 'react-native';
 import {
     RTCPeerConnection,
@@ -30,6 +31,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     const [isConnected, setIsConnected] = useState(false);
     const [showRoomId, setShowRoomId] = useState(false);
     const [roomDocId, setRoomDocId] = useState<string | undefined>(roomRefId);
+    const [streamsUpdateKey, setStreamsUpdateKey] = useState(0);
+    const remoteStreamsRef = useRef<any[]>([]);
 
     const peerConnections = useRef<{ [key: string]: RTCPeerConnection }>({});
     const localStreamRef = useRef<any>(null);
@@ -48,6 +51,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     useEffect(() => {
         setupLocalStream();
         setupFirestoreListeners();
+        remoteStreamsRef.current = remoteStreams;
         return () => {
             cleanup();
         };
@@ -95,6 +99,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             snapshot.docChanges().forEach((change: any) => {
                 if (change.type === 'added') {
                     handleNewParticipant(change.doc.id);
+                } else if (change.type === 'removed') {
+                    handleParticipantLeft(change.doc.id);
                 }
             });
         });
@@ -146,19 +152,22 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         };
 
         (pc as any).oniceconnectionstatechange = () => {
-            console.log('ICE Connection State:', pc.iceConnectionState);
+            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                handleParticipantLeft(participantId);
+            }
         };
 
         (pc as any).ontrack = (event: { streams: any[] }) => {
-            console.log('Received remote track:', event.streams[0]);
-            setRemoteStreams((prev) => {
-                // Check if stream already exists
-                const exists = prev.some(stream => stream.id === event.streams[0].id);
-                if (!exists) {
-                    return [...prev, event.streams[0]];
-                }
-                return prev;
-            });
+            if (event.streams && event.streams[0]) {
+                const newStream = event.streams[0];
+                setRemoteStreams(prev => {
+                    const exists = prev.some(stream => stream.id === newStream.id);
+                    if (!exists) {
+                        return [...prev, newStream];
+                    }
+                    return prev;
+                });
+            }
         };
 
         if (localStreamRef.current) {
@@ -176,6 +185,32 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         if (pc) {
             await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
         }
+    };
+
+    const handleParticipantLeft = (participantId: string) => {
+
+        // Close and remove the peer connection
+        const pc = peerConnections.current[participantId];
+        if (pc) {
+            pc.close();
+            delete peerConnections.current[participantId];
+        }
+
+        // Create a new array without the leaving participant's stream
+        const updatedStreams = remoteStreamsRef.current.filter(stream => {
+            const isParticipantStream = stream.id.includes(participantId);
+            if (isParticipantStream) {
+                // Stop all tracks in the stream
+                stream.getTracks().forEach((track: any) => {
+                    track.stop();
+                });
+            }
+            return !isParticipantStream;
+        });
+
+        // Update the streams state
+        setRemoteStreams(updatedStreams);
+        setStreamsUpdateKey(prev => prev + 1);
     };
 
     const startCall = async () => {
@@ -283,7 +318,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                             const candidate = change.doc.data();
                             try {
                                 await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
-                                console.log('Added ICE candidate from broadcaster');
                             } catch (err) {
                                 console.error('Error adding ICE candidate:', err);
                             }
@@ -300,7 +334,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 const candidate = doc.data();
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate.candidate));
-                    console.log('Added existing ICE candidate from broadcaster');
                 } catch (err) {
                     console.error('Error adding existing ICE candidate:', err);
                 }
@@ -324,6 +357,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             });
             peerConnections.current = {};
             setRemoteStreams([]);
+            setStreamsUpdateKey(prev => prev + 1);
 
             // Stop all local tracks
             if (localStreamRef.current) {
@@ -366,9 +400,13 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 });
             }
 
+            // Clear remote streams
+            setRemoteStreams([]);
+            setStreamsUpdateKey(prev => prev + 1);
+
             // If broadcaster, update room status to inactive
-            if (isBroadcaster) {
-                const roomRef = firestore().collection('rooms').doc(roomId);
+            if (isBroadcaster && roomDocId) {
+                const roomRef = firestore().collection('rooms').doc(roomDocId);
                 const roomDoc: any = await roomRef.get();
                 if (roomDoc._exists) {
                     await roomRef.update({
@@ -382,6 +420,20 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
         } catch (err) {
             console.error('Error during cleanup:', err);
         }
+    };
+
+    const renderRemoteStream = ({ item: stream, index }: { item: any; index: number }) => {
+        return (
+            <View style={styles.remoteStream}>
+                <RTCView
+                    streamURL={stream.toURL()}
+                    style={styles.videoStream}
+                    objectFit="cover"
+                    mirror={true}
+                />
+                <Text style={styles.streamLabel}>Remote Stream {index + 1}</Text>
+            </View>
+        );
     };
 
     return (
@@ -406,17 +458,18 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     </View>
                 )}
 
-                {remoteStreams.map((stream, index) => (
-                    <View key={index} style={styles.remoteStream}>
-                        <RTCView
-                            streamURL={stream.toURL()}
-                            style={styles.videoStream}
-                            objectFit="cover"
-                            mirror={true}
-                        />
-                        <Text style={styles.streamLabel}>Remote Stream {index + 1}</Text>
-                    </View>
-                ))}
+                <FlatList
+                    data={remoteStreams}
+                    renderItem={renderRemoteStream}
+                    keyExtractor={(item) => item.id}
+                    scrollEnabled={false}
+                    style={styles.remoteStreamsList}
+                    extraData={streamsUpdateKey}
+                    removeClippedSubviews={true}
+                    maxToRenderPerBatch={5}
+                    windowSize={5}
+                    initialNumToRender={5}
+                />
             </ScrollView>
 
             <View style={styles.controls}>
@@ -529,6 +582,9 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
         color: '#007AFF',
+    },
+    remoteStreamsList: {
+        flex: 1,
     },
 });
 
