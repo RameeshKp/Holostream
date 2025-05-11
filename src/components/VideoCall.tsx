@@ -572,12 +572,18 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
             <ScrollView style={styles.streamsContainer}>
                 {localStream && (
                     <View style={styles.localStream}>
-                        <RTCView
-                            streamURL={localStream.toURL()}
-                            style={styles.videoStream}
-                            objectFit="cover"
-                            mirror={true}
-                        />
+                        {isCameraEnabled ? (
+                            <RTCView
+                                streamURL={localStream.toURL()}
+                                style={styles.videoStream}
+                                objectFit="cover"
+                                mirror={true}
+                            />
+                        ) : (
+                            <View style={[styles.videoStream, styles.disabledVideo]}>
+                                <Text style={styles.disabledVideoText}>Camera Off</Text>
+                            </View>
+                        )}
                         <Text style={styles.streamLabel}>Local Stream</Text>
                         {renderStreamControls(true)}
                     </View>
@@ -735,6 +741,16 @@ const styles = StyleSheet.create({
     controlButtonText: {
         fontSize: 20,
         color: '#fff',
+    },
+    disabledVideo: {
+        backgroundColor: '#000',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    disabledVideoText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
     },
 });
 
