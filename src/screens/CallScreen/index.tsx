@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
     TextInput,
     TouchableOpacity,
     ActivityIndicator,
+    Modal,
 } from 'react-native';
 import VideoCall from '../../components/VideoCall';
 import firestore from '@react-native-firebase/firestore';
 import { TOAST_TYPE } from '../../utils/Toast';
 import { showToast } from '../../utils/Toast';
 import { styles } from './styles';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const TUTORIAL_KEY = '@holostream_tutorial_shown';
 
 const CallScreen: React.FC = () => {
     const [roomId, setRoomId] = useState('');
@@ -19,6 +22,27 @@ const CallScreen: React.FC = () => {
     const [isInCall, setIsInCall] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isBroadcaster, setIsBroadcaster] = useState(false);
+    const [showTutorial, setShowTutorial] = useState(false);
+
+    useEffect(() => {
+        checkTutorialStatus();
+    }, []);
+
+    const checkTutorialStatus = async () => {
+        try {
+            const tutorialShown = await AsyncStorage.getItem(TUTORIAL_KEY);
+            if (!tutorialShown) {
+                setShowTutorial(true);
+                await AsyncStorage.setItem(TUTORIAL_KEY, 'true');
+            }
+        } catch (error) {
+            console.error('Error checking tutorial status:', error);
+        }
+    };
+
+    const handleShowTutorial = () => {
+        setShowTutorial(true);
+    };
 
     const generateRoomId = () => {
         return Math.floor(1000 + Math.random() * 9000).toString();
@@ -64,6 +88,43 @@ const CallScreen: React.FC = () => {
         }
     };
 
+    const TutorialOverlay = () => (
+        <Modal
+            visible={showTutorial}
+            transparent={true}
+            animationType="fade"
+        >
+            <View style={styles.tutorialOverlay}>
+                <View style={styles.tutorialContent}>
+                    <Text style={styles.tutorialTitle}>Welcome to HoloStream!</Text>
+                    <Text style={styles.tutorialText}>Here's how to use manual signaling:</Text>
+
+                    <View style={styles.tutorialStep}>
+                        <Text style={styles.tutorialStepNumber}>1</Text>
+                        <Text style={styles.tutorialStepText}>Create a new room or join an existing one using the room code</Text>
+                    </View>
+
+                    <View style={styles.tutorialStep}>
+                        <Text style={styles.tutorialStepNumber}>2</Text>
+                        <Text style={styles.tutorialStepText}>Share the room code with others to let them join</Text>
+                    </View>
+
+                    <View style={styles.tutorialStep}>
+                        <Text style={styles.tutorialStepNumber}>3</Text>
+                        <Text style={styles.tutorialStepText}>Use the controls to manage your camera and microphone</Text>
+                    </View>
+
+                    <TouchableOpacity
+                        style={styles.tutorialButton}
+                        onPress={() => setShowTutorial(false)}
+                    >
+                        <Text style={styles.tutorialButtonText}>Got it!</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+
     if (isInCall) {
         return <VideoCall
             roomId={roomId}
@@ -79,6 +140,7 @@ const CallScreen: React.FC = () => {
 
     return (
         <View style={styles.container}>
+            <TutorialOverlay />
             <Text style={styles.title}>HoloStream</Text>
             <Text style={styles.subtitle}>"Join or start a video conference instantly — connect, collaborate, and communicate with ease."</Text>
 
@@ -102,14 +164,21 @@ const CallScreen: React.FC = () => {
 
                 <TouchableOpacity
                     disabled={isLoading}
-                    style={styles.button} onPress={joinExistingCall}>
+                    style={styles.button}
+                    onPress={joinExistingCall}
+                >
                     {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Join Room</Text>}
                 </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+                style={styles.instructionsLink}
+                onPress={handleShowTutorial}
+            >
+                <Text style={styles.instructionsLinkText}>See Instructions</Text>
+            </TouchableOpacity>
         </View>
     );
 };
-
-
 
 export default CallScreen; 
