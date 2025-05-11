@@ -6,6 +6,7 @@ import {
     Text,
     FlatList,
     Share,
+    ActivityIndicator,
 } from 'react-native';
 import {
     RTCPeerConnection,
@@ -31,6 +32,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
     const [localStream, setLocalStream] = useState<any>(null);
     const [remoteStreams, setRemoteStreams] = useState<any[]>([]);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [isHangUp, setIsHangUp] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
     const [showRoomId, setShowRoomId] = useState(false);
     const [roomDocId, setRoomDocId] = useState<string | undefined>(roomRefId);
@@ -285,6 +287,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true
             });
+            console.log("🚀 ~ startCall ~ offer:", offer)
             await pc.setLocalDescription(offer);
 
             // 4. Save offer to Firestore
@@ -406,6 +409,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
 
     const hangUp = async () => {
         try {
+            setIsHangUp(true);
             // Unsubscribe from room status listener
             if (roomStatusUnsubscribe.current) {
                 roomStatusUnsubscribe.current();
@@ -439,10 +443,13 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                 }
             }
             setIsConnected(false);
+            setIsHangUp(false);
             onHangUp();
         } catch (err) {
             console.error('Error during hang up:', err);
             showToast(TOAST_TYPE.ERROR, 'Failed to properly end the call');
+        } finally {
+            setIsHangUp(false);
         }
     };
 
@@ -756,17 +763,20 @@ const VideoCall: React.FC<VideoCallProps> = ({ roomId, roomRefId, isBroadcaster,
                     </TouchableOpacity>
                 )}
 
-                {isConnected ? <TouchableOpacity
-                    style={[styles.button, styles.hangUpButton]}
-                    onPress={hangUp}
-                >
-                    <Text style={styles.buttonText}>Hang Up</Text>
-                </TouchableOpacity> : <TouchableOpacity
-                    style={[styles.button, styles.hangUpButton]}
-                    onPress={onHangUp}
-                >
-                    <Text style={styles.buttonText}>Cancel</Text>
-                </TouchableOpacity>}
+                {isConnected ?
+                    <TouchableOpacity
+                        style={[styles.button, styles.hangUpButton]}
+                        onPress={hangUp}
+                        disabled={isHangUp}
+                    >
+                        {isHangUp ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Hang Up</Text>}
+                    </TouchableOpacity> :
+                    <TouchableOpacity
+                        style={[styles.button, styles.hangUpButton]}
+                        onPress={onHangUp}
+                    >
+                        <Text style={styles.buttonText}>Cancel</Text>
+                    </TouchableOpacity>}
             </View>
         </View>
     );

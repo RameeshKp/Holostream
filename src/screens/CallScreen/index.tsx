@@ -4,6 +4,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
+    ActivityIndicator,
 } from 'react-native';
 import VideoCall from '../../components/VideoCall';
 import firestore from '@react-native-firebase/firestore';
@@ -16,6 +17,7 @@ const CallScreen: React.FC = () => {
     const [roomId, setRoomId] = useState('');
     const [roomDocID, setRoomDocID] = useState('');
     const [isInCall, setIsInCall] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
     const [isBroadcaster, setIsBroadcaster] = useState(false);
 
     const generateRoomId = () => {
@@ -30,7 +32,9 @@ const CallScreen: React.FC = () => {
     };
 
     const joinExistingCall = async () => {
+        setIsLoading(true);
         if (!roomId.trim()) {
+            setIsLoading(false);
             showToast(TOAST_TYPE.ERROR, 'Please enter a room ID');
             return;
         }
@@ -44,6 +48,7 @@ const CallScreen: React.FC = () => {
             );
 
             if (!activeRoom) {
+                setIsLoading(false);
                 showToast(TOAST_TYPE.ERROR, 'Room does not exist or is not active');
                 return;
             }
@@ -51,10 +56,11 @@ const CallScreen: React.FC = () => {
             setRoomDocID(activeRoom.id);
             setIsBroadcaster(false);
             setIsInCall(true);
-            // setRoomId(''); // Reset input after successful join
         } catch (error) {
             console.error('Error checking room:', error);
             showToast(TOAST_TYPE.ERROR, 'Failed to join room');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -79,7 +85,7 @@ const CallScreen: React.FC = () => {
             <View style={styles.inputContainer}>
                 <TextInput
                     style={styles.input}
-                    placeholder="Enter Room ID"
+                    placeholder="Enter Room Code"
                     value={roomId}
                     onChangeText={setRoomId}
                     autoCapitalize="none"
@@ -94,8 +100,10 @@ const CallScreen: React.FC = () => {
                     <Text style={styles.buttonText}>Create New Room</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.button} onPress={joinExistingCall}>
-                    <Text style={styles.buttonText}>Join Room</Text>
+                <TouchableOpacity
+                    disabled={isLoading}
+                    style={styles.button} onPress={joinExistingCall}>
+                    {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Join Room</Text>}
                 </TouchableOpacity>
             </View>
         </View>
