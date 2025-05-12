@@ -49,7 +49,7 @@ HoloStream uses Firebase Firestore for signaling, implementing a manual WebRTC s
 2. **Installation**
    ```bash
    # Clone the repository
-   git clone [repository-url]
+   git clone [https://github.com/RameeshKp/Holostream.git]
    cd HoloStream
 
    # Install dependencies
